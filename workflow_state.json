@@ -1,0 +1,23 @@
+{
+  "app_name": "Jenkins Telegram Deployment Bot",
+  "pattern": "single_agent",
+  "agents": {
+    "deployment_agent": {
+      "agent_id": "698f5d45445b5e3a53f2c7e3",
+      "name": "Deployment Agent",
+      "description": "Receives deployment requests from Telegram, parses configuration (commit hash, environment, branch, build parameters), triggers Jenkins pipeline via API, monitors build progress, and sends real-time status updates back to the user via Telegram.",
+      "model": "gpt-4.1",
+      "provider": "openai",
+      "temperature": 0.2,
+      "top_p": 1,
+      "capabilities": {
+        "image_output": false,
+        "voice": false,
+        "file_output": false,
+        "knowledge_base": false,
+        "scheduled": false
+      }
+    }
+  },
+  "agent_ids": ["698f5d45445b5e3a53f2c7e3"]
+}

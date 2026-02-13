@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "input_node",
+      "type": "Input",
+      "label": "Incoming Telegram Message",
+      "nodeCategory": "input"
+    },
+    {
+      "id": "deployment_agent",
+      "type": "Agent",
+      "label": "Deployment Agent",
+      "nodeCategory": "agent",
+      "agent_id": "698f5d45445b5e3a53f2c7e3"
+    },
+    {
+      "id": "output_node",
+      "type": "Output",
+      "label": "Deployment Status Response",
+      "nodeCategory": "end"
+    }
+  ],
+  "edges": [
+    {
+      "source": "input_node",
+      "target": "deployment_agent"
+    },
+    {
+      "source": "deployment_agent",
+      "target": "output_node"
+    }
+  ]
+}

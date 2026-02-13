@@ -1,0 +1,58 @@
+{
+  "agent_name": "Deployment Agent",
+  "agent_id": "698f5d45445b5e3a53f2c7e3",
+  "description": "Receives deployment requests from Telegram, parses configuration (commit hash, environment, branch, build parameters), triggers Jenkins pipeline via API, monitors build progress, and sends real-time status updates back to the user via Telegram.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "result": {
+      "deployment_id": "string",
+      "status": "string",
+      "commit_hash": "string",
+      "environment": "string",
+      "branch": "string",
+      "build_parameters": {},
+      "build_url": "string",
+      "started_at": "string",
+      "completed_at": "string",
+      "duration": "string",
+      "build_number": "number",
+      "stage_info": [
+        {
+          "stage_name": "string",
+          "status": "string",
+          "duration": "string"
+        }
+      ],
+      "logs_summary": "string",
+      "error_message": "string",
+      "message": "string"
+    }
+  },
+  "example_response": {
+    "result": {
+      "deployment_id": "Unique identifier for this deployment in format deploy-{timestamp}-{short_hash}",
+      "status": "Current deployment status",
+      "commit_hash": "The Git commit hash being deployed",
+      "environment": "Target deployment environment (dev, staging, qa, uat, production)",
+      "branch": "Git branch being deployed from",
+      "build_parameters": {},
+      "build_url": "Jenkins build URL for this deployment",
+      "started_at": "ISO 8601 timestamp when the deployment started",
+      "completed_at": "ISO 8601 timestamp when the deployment completed, empty string if not completed",
+      "duration": "Human-readable duration of the deployment (e.g. 2m 34s)",
+      "build_number": 0,
+      "stage_info": [
+        {
+          "stage_name": "Name of the build stage",
+          "status": "Status of this stage",
+          "duration": "Duration of this stage"
+        }
+      ],
+      "logs_summary": "Brief summary of build logs",
+      "error_message": "Error details if deployment failed, empty string if no error",
+      "message": "Human-readable summary message for Telegram response"
+    }
+  }
+}
