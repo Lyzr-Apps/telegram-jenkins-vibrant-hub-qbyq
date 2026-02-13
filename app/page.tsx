@@ -41,7 +41,7 @@ import {
 import {
   LuGitCommitHorizontal,
   LuGitBranch,
-  LuLoader2,
+  LuLoaderCircle,
 } from 'react-icons/lu'
 
 // ============================================================================
@@ -336,7 +336,7 @@ function getStatusIcon(status: string) {
   const s = (status ?? '').toLowerCase()
   if (s === 'success' || s === 'completed') return <HiCheckCircle className="h-4 w-4 text-green-600" />
   if (s === 'failed' || s === 'error') return <HiXCircle className="h-4 w-4 text-red-600" />
-  if (s === 'building' || s === 'in_progress' || s === 'running') return <LuLoader2 className="h-4 w-4 text-blue-600 animate-spin" />
+  if (s === 'building' || s === 'in_progress' || s === 'running') return <LuLoaderCircle className="h-4 w-4 text-blue-600 animate-spin" />
   if (s === 'queued' || s === 'pending') return <HiClock className="h-4 w-4 text-amber-600" />
   if (s === 'skipped') return <HiExclamationCircle className="h-4 w-4 text-gray-400" />
   return <HiExclamationCircle className="h-4 w-4 text-muted-foreground" />
@@ -979,7 +979,7 @@ export default function Page() {
                   >
                     {loading ? (
                       <>
-                        <LuLoader2 className="h-4 w-4 animate-spin" />
+                        <LuLoaderCircle className="h-4 w-4 animate-spin" />
                         Deploying...
                       </>
                     ) : (
@@ -1006,7 +1006,7 @@ export default function Page() {
                 <CardContent>
                   {loading && (
                     <div className="flex flex-col items-center justify-center py-16 gap-4">
-                      <LuLoader2 className="h-10 w-10 animate-spin text-primary" />
+                      <LuLoaderCircle className="h-10 w-10 animate-spin text-primary" />
                       <div className="text-center">
                         <p className="text-sm font-medium text-foreground">Processing Deployment</p>
                         <p className="text-xs text-muted-foreground mt-1">Triggering Jenkins pipeline and monitoring build progress...</p>
@@ -1336,7 +1336,7 @@ export default function Page() {
                   >
                     {testingConnection ? (
                       <>
-                        <LuLoader2 className="h-4 w-4 animate-spin" />
+                        <LuLoaderCircle className="h-4 w-4 animate-spin" />
                         Testing...
                       </>
                     ) : (
