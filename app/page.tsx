@@ -37,6 +37,7 @@ import {
   HiEyeSlash,
   HiWrenchScrewdriver,
   HiInformationCircle,
+  HiAdjustmentsHorizontal,
 } from 'react-icons/hi2'
 import {
   LuGitCommitHorizontal,
@@ -113,11 +114,6 @@ interface DeploymentResult {
   message: string
 }
 
-interface BuildParam {
-  key: string
-  value: string
-}
-
 interface DeploymentHistoryEntry {
   id: string
   data: DeploymentResult
@@ -132,7 +128,29 @@ interface JenkinsConfig {
   authMethod: 'token' | 'password'
 }
 
+interface JobParameter {
+  name: string
+  label: string
+  type: 'text' | 'select' | 'checkbox' | 'multiselect'
+  defaultValue: string
+  options: string[]
+  description: string
+  required: boolean
+}
+
+interface QuickTemplate {
+  name: string
+  description: string
+  paramValues: Record<string, string>
+  icon: React.ReactNode
+}
+
+// ============================================================================
+// CONSTANTS & DEFAULTS
+// ============================================================================
+
 const JENKINS_CONFIG_KEY = 'jenkins_deployment_config'
+const JOB_PARAMS_KEY = 'jenkins_job_parameters'
 
 const DEFAULT_JENKINS_CONFIG: JenkinsConfig = {
   serverUrl: '',
@@ -142,6 +160,67 @@ const DEFAULT_JENKINS_CONFIG: JenkinsConfig = {
   authMethod: 'token',
 }
 
+const DEFAULT_JOB_PARAMS: JobParameter[] = [
+  {
+    name: 'BRANCH',
+    label: 'Branch',
+    type: 'text',
+    defaultValue: 'main',
+    options: [],
+    description: 'Git branch to deploy',
+    required: true,
+  },
+  {
+    name: 'ENVIRONMENT',
+    label: 'Environment',
+    type: 'select',
+    defaultValue: 'sandbox-preprod',
+    options: ['dev', 'sandbox-preprod', 'staging', 'production'],
+    description: 'Target deployment environment',
+    required: true,
+  },
+  {
+    name: 'SERVICES',
+    label: 'Services',
+    type: 'multiselect',
+    defaultValue: '',
+    options: ['frontend', 'backend', 'api-gateway', 'auth-service', 'notification-service'],
+    description: 'Select services to deploy',
+    required: false,
+  },
+  {
+    name: 'SKIP_TESTS',
+    label: 'Skip Tests',
+    type: 'checkbox',
+    defaultValue: 'false',
+    options: [],
+    description: 'Skip running test suite before deployment',
+    required: false,
+  },
+  {
+    name: 'FORCE_DEPLOY',
+    label: 'Force Deploy',
+    type: 'checkbox',
+    defaultValue: 'false',
+    options: [],
+    description: 'Force deployment even if checks fail',
+    required: false,
+  },
+  {
+    name: 'IMAGE_TAG',
+    label: 'Image Tag',
+    type: 'text',
+    defaultValue: 'latest',
+    options: [],
+    description: 'Docker image tag to deploy',
+    required: false,
+  },
+]
+
+// ============================================================================
+// PERSISTENCE HELPERS
+// ============================================================================
+
 function loadJenkinsConfig(): JenkinsConfig {
   if (typeof window === 'undefined') return DEFAULT_JENKINS_CONFIG
   try {
@@ -150,7 +229,7 @@ function loadJenkinsConfig(): JenkinsConfig {
       const parsed = JSON.parse(stored)
       return { ...DEFAULT_JENKINS_CONFIG, ...parsed }
     }
-  } catch {}
+  } catch { /* ignore */ }
   return DEFAULT_JENKINS_CONFIG
 }
 
@@ -158,19 +237,30 @@ function saveJenkinsConfig(config: JenkinsConfig) {
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(JENKINS_CONFIG_KEY, JSON.stringify(config))
-  } catch {}
+  } catch { /* ignore */ }
+}
+
+function loadJobParams(): JobParameter[] {
+  if (typeof window === 'undefined') return DEFAULT_JOB_PARAMS
+  try {
+    const stored = localStorage.getItem(JOB_PARAMS_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_JOB_PARAMS
+}
+
+function saveJobParams(params: JobParameter[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(JOB_PARAMS_KEY, JSON.stringify(params))
+  } catch { /* ignore */ }
 }
 
 function isJenkinsConfigured(config: JenkinsConfig): boolean {
   return !!(config.serverUrl.trim() && config.jobPath.trim() && config.username.trim() && config.apiToken.trim())
-}
-
-interface QuickTemplate {
-  name: string
-  description: string
-  environment: string
-  branch: string
-  icon: React.ReactNode
 }
 
 // ============================================================================
@@ -185,10 +275,10 @@ const SAMPLE_DEPLOYMENTS: DeploymentHistoryEntry[] = [
       deployment_id: 'deploy-1707820200-a3f8b2c',
       status: 'success',
       commit_hash: 'a3f8b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0',
-      environment: 'staging',
+      environment: 'sandbox-preprod',
       branch: 'main',
-      build_parameters: { SKIP_TESTS: 'false', VERBOSE: 'true' },
-      build_url: 'https://jenkins.example.com/job/deploy/42',
+      build_parameters: { SKIP_TESTS: 'false', SERVICES: 'frontend,backend', IMAGE_TAG: 'v2.3.1' },
+      build_url: 'https://jenkins.sandbox-preprod.senseq.co/job/UI/job/Deployment/job/sandbox-preprod-deploy-ui/42',
       started_at: '2026-02-13T10:30:00Z',
       completed_at: '2026-02-13T10:34:30Z',
       duration: '4m 30s',
@@ -199,9 +289,9 @@ const SAMPLE_DEPLOYMENTS: DeploymentHistoryEntry[] = [
         { stage_name: 'Test', status: 'success', duration: '1m 20s' },
         { stage_name: 'Deploy', status: 'success', duration: '1m 17s' },
       ],
-      logs_summary: 'All stages completed successfully. Application deployed to staging environment. Health checks passed.',
+      logs_summary: 'All stages completed successfully. Application deployed to sandbox-preprod environment. Health checks passed.',
       error_message: '',
-      message: 'Deployment to staging completed successfully in 4m 30s. Build #42 is live.',
+      message: 'Deployment to sandbox-preprod completed successfully in 4m 30s. Build #42 is live.',
     },
   },
   {
@@ -213,8 +303,8 @@ const SAMPLE_DEPLOYMENTS: DeploymentHistoryEntry[] = [
       commit_hash: 'b4c9d3e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1',
       environment: 'production',
       branch: 'release/v2.1',
-      build_parameters: { CANARY: 'true' },
-      build_url: 'https://jenkins.example.com/job/deploy/41',
+      build_parameters: { FORCE_DEPLOY: 'true' },
+      build_url: 'https://jenkins.sandbox-preprod.senseq.co/job/UI/job/Deployment/job/sandbox-preprod-deploy-ui/41',
       started_at: '2026-02-13T09:15:00Z',
       completed_at: '2026-02-13T09:18:45Z',
       duration: '3m 45s',
@@ -239,8 +329,8 @@ const SAMPLE_DEPLOYMENTS: DeploymentHistoryEntry[] = [
       commit_hash: 'c5d0e4f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2',
       environment: 'dev',
       branch: 'feature/auth-improvements',
-      build_parameters: { DEBUG: 'true' },
-      build_url: 'https://jenkins.example.com/job/deploy/40',
+      build_parameters: { SKIP_TESTS: 'true', SERVICES: 'auth-service' },
+      build_url: 'https://jenkins.sandbox-preprod.senseq.co/job/UI/job/Deployment/job/sandbox-preprod-deploy-ui/40',
       started_at: '2026-02-13T08:00:00Z',
       completed_at: '2026-02-13T08:02:15Z',
       duration: '2m 15s',
@@ -503,7 +593,7 @@ function DeploymentDetailCard({ deployment }: { deployment: DeploymentResult }) 
             {paramEntries.map(([key, val], idx) => (
               <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-secondary rounded-md text-xs font-mono">
                 <span className="text-muted-foreground">{key}=</span>
-                <span className="text-foreground font-medium">{val}</span>
+                <span className="text-foreground font-medium">{String(val)}</span>
               </span>
             ))}
           </div>
@@ -589,19 +679,210 @@ function HistoryRow({
 }
 
 // ============================================================================
+// JOB PARAMETER EDITOR (Settings Tab)
+// ============================================================================
+
+function JobParameterEditor({
+  params,
+  onUpdate,
+}: {
+  params: JobParameter[]
+  onUpdate: (params: JobParameter[]) => void
+}) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+
+  const addParam = useCallback(() => {
+    const newParam: JobParameter = {
+      name: '',
+      label: '',
+      type: 'text',
+      defaultValue: '',
+      options: [],
+      description: '',
+      required: false,
+    }
+    onUpdate([...params, newParam])
+    setExpandedIdx(params.length)
+  }, [params, onUpdate])
+
+  const removeParam = useCallback((idx: number) => {
+    const next = params.filter((_, i) => i !== idx)
+    onUpdate(next)
+    if (expandedIdx === idx) setExpandedIdx(null)
+    else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1)
+  }, [params, onUpdate, expandedIdx])
+
+  const updateParam = useCallback((idx: number, field: keyof JobParameter, value: string | boolean | string[]) => {
+    const next = params.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
+    onUpdate(next)
+  }, [params, onUpdate])
+
+  const resetToDefaults = useCallback(() => {
+    onUpdate(DEFAULT_JOB_PARAMS)
+    setExpandedIdx(null)
+  }, [onUpdate])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <HiAdjustmentsHorizontal className="h-4 w-4 text-primary" />
+            Job Parameters
+          </h4>
+          <p className="text-xs text-muted-foreground mt-0.5">Configure the parameters sent to your Jenkins job when triggering a build.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={resetToDefaults} className="h-7 text-xs gap-1 text-muted-foreground">
+            Reset Defaults
+          </Button>
+          <Button variant="outline" size="sm" onClick={addParam} className="h-7 gap-1 text-xs">
+            <HiPlus className="h-3.5 w-3.5" />
+            Add Parameter
+          </Button>
+        </div>
+      </div>
+
+      {params.length === 0 && (
+        <div className="text-center py-8 text-sm text-muted-foreground">
+          No parameters configured. Click &quot;Add Parameter&quot; to define job parameters, or &quot;Reset Defaults&quot; to restore the default set.
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {params.map((param, idx) => {
+          const isOpen = expandedIdx === idx
+          return (
+            <div key={idx} className="border border-border/60 rounded-lg bg-card overflow-hidden">
+              <button
+                onClick={() => setExpandedIdx(isOpen ? null : idx)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm font-medium text-foreground">{param.label || param.name || 'Untitled Parameter'}</span>
+                  {param.name && (
+                    <span className="text-xs font-mono text-muted-foreground px-1.5 py-0.5 bg-secondary rounded">{param.name}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-secondary/60 rounded">{param.type}</span>
+                  {param.required && (
+                    <span className="text-xs text-amber-700 font-medium">Required</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeParam(idx) }}
+                    className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <HiTrash className="h-3.5 w-3.5" />
+                  </button>
+                  {isOpen ? <HiChevronUp className="h-4 w-4 text-muted-foreground" /> : <HiChevronDown className="h-4 w-4 text-muted-foreground" />}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="px-4 pb-4 pt-2 border-t border-border/40 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Parameter Name (Jenkins key)</Label>
+                      <Input
+                        placeholder="e.g. BRANCH"
+                        value={param.name}
+                        onChange={(e) => updateParam(idx, 'name', e.target.value)}
+                        className="text-sm font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Display Label</Label>
+                      <Input
+                        placeholder="e.g. Branch"
+                        value={param.label}
+                        onChange={(e) => updateParam(idx, 'label', e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Type</Label>
+                      <Select value={param.type} onValueChange={(v) => updateParam(idx, 'type', v)}>
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="text">Text</SelectItem>
+                          <SelectItem value="select">Select (Dropdown)</SelectItem>
+                          <SelectItem value="multiselect">Multi-Select (Checkboxes)</SelectItem>
+                          <SelectItem value="checkbox">Checkbox (Boolean)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Default Value</Label>
+                      <Input
+                        placeholder={param.type === 'checkbox' ? 'true or false' : 'Default value'}
+                        value={param.defaultValue}
+                        onChange={(e) => updateParam(idx, 'defaultValue', e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {(param.type === 'select' || param.type === 'multiselect') && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Options (comma-separated)</Label>
+                      <Input
+                        placeholder="e.g. dev, staging, production"
+                        value={Array.isArray(param.options) ? param.options.join(', ') : ''}
+                        onChange={(e) => {
+                          const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                          updateParam(idx, 'options', opts)
+                        }}
+                        className="text-sm font-mono"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Description / Help Text</Label>
+                    <Input
+                      placeholder="Brief description of this parameter"
+                      value={param.description}
+                      onChange={(e) => updateParam(idx, 'description', e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={param.required}
+                      onCheckedChange={(v) => updateParam(idx, 'required', v)}
+                    />
+                    <Label className="text-xs font-medium cursor-pointer">Required</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // MAIN PAGE
 // ============================================================================
 
 export default function Page() {
-  // Form State
-  const [commitHash, setCommitHash] = useState('')
-  const [environment, setEnvironment] = useState('staging')
-  const [branch, setBranch] = useState('main')
-  const [buildParams, setBuildParams] = useState<BuildParam[]>([])
+  // Job Parameters
+  const [jobParams, setJobParams] = useState<JobParameter[]>(DEFAULT_JOB_PARAMS)
+  const [paramValues, setParamValues] = useState<Record<string, string>>({})
 
   // Agent State
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [agentMessage, setAgentMessage] = useState('')
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
   const [currentDeployment, setCurrentDeployment] = useState<DeploymentResult | null>(null)
 
@@ -623,32 +904,37 @@ export default function Page() {
   // Active Tab
   const [activeTab, setActiveTab] = useState('deploy')
 
-  // Load Jenkins config from localStorage on mount
+  // Load config and params from localStorage on mount
   useEffect(() => {
     setJenkinsConfig(loadJenkinsConfig())
+    const storedParams = loadJobParams()
+    setJobParams(storedParams)
+    // Initialize param values from defaults
+    const defaults: Record<string, string> = {}
+    storedParams.forEach(p => {
+      if (p.defaultValue) defaults[p.name] = p.defaultValue
+    })
+    setParamValues(defaults)
   }, [])
 
   // Quick Deploy Templates
   const templates: QuickTemplate[] = [
     {
-      name: 'Deploy to Staging',
-      description: 'Standard deployment to staging environment from main branch',
-      environment: 'staging',
-      branch: 'main',
+      name: 'Deploy to Sandbox-Preprod',
+      description: 'Standard deployment to sandbox-preprod environment from main branch',
+      paramValues: { BRANCH: 'main', ENVIRONMENT: 'sandbox-preprod', SKIP_TESTS: 'false', IMAGE_TAG: 'latest' },
       icon: <HiServerStack className="h-5 w-5" />,
     },
     {
       name: 'Deploy to Production',
       description: 'Production deployment from main branch with full pipeline',
-      environment: 'production',
-      branch: 'main',
+      paramValues: { BRANCH: 'main', ENVIRONMENT: 'production', SKIP_TESTS: 'false', FORCE_DEPLOY: 'false', IMAGE_TAG: 'latest' },
       icon: <HiRocketLaunch className="h-5 w-5" />,
     },
     {
       name: 'Hotfix Deploy',
-      description: 'Emergency hotfix deployment to production from hotfix branch',
-      environment: 'production',
-      branch: 'hotfix/',
+      description: 'Emergency hotfix deployment to production, skipping tests with force deploy',
+      paramValues: { BRANCH: 'hotfix/', ENVIRONMENT: 'production', SKIP_TESTS: 'true', FORCE_DEPLOY: 'true' },
       icon: <HiBolt className="h-5 w-5" />,
     },
   ]
@@ -658,39 +944,55 @@ export default function Page() {
     if (showSampleData) {
       setDeploymentHistory(SAMPLE_DEPLOYMENTS)
       setCurrentDeployment(SAMPLE_DEPLOYMENTS[0]?.data ?? null)
-      setCommitHash('a3f8b2c4d5e6f7a8')
-      setEnvironment('staging')
-      setBranch('main')
-      setBuildParams([{ key: 'SKIP_TESTS', value: 'false' }, { key: 'VERBOSE', value: 'true' }])
+      setParamValues({
+        BRANCH: 'main',
+        ENVIRONMENT: 'sandbox-preprod',
+        SERVICES: 'frontend,backend',
+        SKIP_TESTS: 'false',
+        FORCE_DEPLOY: 'false',
+        IMAGE_TAG: 'v2.3.1',
+      })
     } else {
       setDeploymentHistory([])
       setCurrentDeployment(null)
-      setCommitHash('')
-      setEnvironment('staging')
-      setBranch('main')
-      setBuildParams([])
+      setAgentMessage('')
+      // Reset to defaults
+      const defaults: Record<string, string> = {}
+      jobParams.forEach(p => {
+        if (p.defaultValue) defaults[p.name] = p.defaultValue
+      })
+      setParamValues(defaults)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSampleData])
 
-  // Build Param handlers
-  const addBuildParam = useCallback(() => {
-    setBuildParams(prev => [...prev, { key: '', value: '' }])
+  // Update a single param value
+  const updateParamValue = useCallback((name: string, value: string) => {
+    setParamValues(prev => ({ ...prev, [name]: value }))
   }, [])
 
-  const removeBuildParam = useCallback((index: number) => {
-    setBuildParams(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const updateBuildParam = useCallback((index: number, field: 'key' | 'value', val: string) => {
-    setBuildParams(prev => prev.map((p, i) => (i === index ? { ...p, [field]: val } : p)))
+  // Toggle a multiselect option
+  const toggleMultiselectOption = useCallback((paramName: string, option: string) => {
+    setParamValues(prev => {
+      const current = prev[paramName] ?? ''
+      const selected = current ? current.split(',').filter(Boolean) : []
+      const idx = selected.indexOf(option)
+      if (idx >= 0) {
+        selected.splice(idx, 1)
+      } else {
+        selected.push(option)
+      }
+      return { ...prev, [paramName]: selected.join(',') }
+    })
   }, [])
 
   // Jenkins config handlers
   const handleSaveConfig = useCallback(() => {
     saveJenkinsConfig(jenkinsConfig)
+    saveJobParams(jobParams)
     setConfigSaved(true)
     setTimeout(() => setConfigSaved(false), 2500)
-  }, [jenkinsConfig])
+  }, [jenkinsConfig, jobParams])
 
   const updateConfigField = useCallback((field: keyof JenkinsConfig, value: string) => {
     setJenkinsConfig(prev => ({ ...prev, [field]: value }))
@@ -700,55 +1002,89 @@ export default function Page() {
   const handleTestConnection = useCallback(async () => {
     if (!isJenkinsConfigured(jenkinsConfig)) return
     setTestingConnection(true)
-    // Simulate a connection test via the agent
     try {
-      const testMsg = `/test-connection server:${jenkinsConfig.serverUrl} job:${jenkinsConfig.jobPath} user:${jenkinsConfig.username}`
+      const testMsg = JSON.stringify({
+        action: 'test-connection',
+        jenkins: {
+          server_url: jenkinsConfig.serverUrl,
+          job_path: jenkinsConfig.jobPath,
+          username: jenkinsConfig.username,
+          auth_token: jenkinsConfig.apiToken,
+          auth_method: jenkinsConfig.authMethod,
+        },
+      })
       await callAIAgent(testMsg, DEPLOYMENT_AGENT_ID)
-    } catch {}
+    } catch { /* ignore */ }
     setTestingConnection(false)
   }, [jenkinsConfig])
 
   // Apply template
   const applyTemplate = useCallback((template: QuickTemplate) => {
-    setEnvironment(template.environment)
-    setBranch(template.branch)
+    setParamValues(prev => ({ ...prev, ...template.paramValues }))
     setActiveTab('deploy')
+  }, [])
+
+  // Handle job params update from editor
+  const handleJobParamsUpdate = useCallback((newParams: JobParameter[]) => {
+    setJobParams(newParams)
+    setConfigSaved(false)
   }, [])
 
   // Deploy handler
   const handleDeploy = useCallback(async () => {
-    if (!commitHash.trim()) {
-      setErrorMsg('Please enter a commit hash to deploy.')
+    // Validate required params
+    const missingRequired = jobParams.filter(p => {
+      if (!p.required) return false
+      const val = paramValues[p.name] ?? ''
+      return !val.trim()
+    })
+    if (missingRequired.length > 0) {
+      setErrorMsg(`Required parameters missing: ${missingRequired.map(p => p.label || p.name).join(', ')}`)
       return
     }
 
     if (!isJenkinsConfigured(jenkinsConfig)) {
-      setErrorMsg('Jenkins is not configured. Go to the Settings tab to set up your Jenkins server URL, job path, and credentials.')
+      setErrorMsg('Jenkins is not configured. Go to the Settings tab to set up your Jenkins connection.')
       return
     }
 
     setLoading(true)
     setErrorMsg('')
+    setAgentMessage('')
     setActiveAgentId(DEPLOYMENT_AGENT_ID)
     setCurrentDeployment(null)
 
-    // Build the message in the expected format
-    const paramsStr = buildParams
-      .filter(p => p.key.trim() && p.value.trim())
-      .map(p => `${p.key.trim()}=${p.value.trim()}`)
-      .join(',')
+    // Build structured message
+    const paramsObj: Record<string, string> = {}
+    jobParams.forEach(p => {
+      const val = paramValues[p.name] ?? p.defaultValue
+      if (val) paramsObj[p.name] = val
+    })
 
-    let message = `/deploy commit:${commitHash.trim()} env:${environment} branch:${branch.trim()}`
-    message += ` server:${jenkinsConfig.serverUrl} job:${jenkinsConfig.jobPath} user:${jenkinsConfig.username} auth:${jenkinsConfig.apiToken} auth_method:${jenkinsConfig.authMethod}`
-    if (paramsStr) {
-      message += ` params:${paramsStr}`
-    }
+    const message = JSON.stringify({
+      action: 'deploy',
+      jenkins: {
+        server_url: jenkinsConfig.serverUrl,
+        job_path: jenkinsConfig.jobPath,
+        username: jenkinsConfig.username,
+        auth_token: jenkinsConfig.apiToken,
+        auth_method: jenkinsConfig.authMethod,
+      },
+      parameters: paramsObj,
+    })
 
     try {
       const result = await callAIAgent(message, DEPLOYMENT_AGENT_ID)
 
       if (result?.success) {
-        const data = result?.response?.result as DeploymentResult | undefined
+        // Try to extract deployment data from various response shapes
+        let data: DeploymentResult | null = null
+
+        const r = result?.response?.result
+        if (r && typeof r === 'object' && ('deployment_id' in r || 'status' in r)) {
+          data = r as DeploymentResult
+        }
+
         if (data) {
           setCurrentDeployment(data)
           const newEntry: DeploymentHistoryEntry = {
@@ -758,20 +1094,25 @@ export default function Page() {
           }
           setDeploymentHistory(prev => [newEntry, ...prev])
         } else {
-          // Try to extract message from response
-          const msg = result?.response?.message ?? 'Deployment request submitted. Response did not include structured data.'
-          setErrorMsg(msg)
+          // Show the raw response message even if no structured data
+          const msg = result?.response?.message
+            ?? result?.response?.result?.text
+            ?? result?.response?.result?.message
+            ?? 'Deployment request submitted. Waiting for structured response from agent.'
+
+          setCurrentDeployment(null)
+          setAgentMessage(typeof msg === 'string' ? msg : JSON.stringify(msg))
         }
       } else {
-        setErrorMsg(result?.error ?? result?.response?.message ?? 'Deployment request failed. Please try again.')
+        setErrorMsg(result?.error ?? result?.response?.message ?? 'Deployment request failed.')
       }
-    } catch (err) {
+    } catch {
       setErrorMsg('An unexpected error occurred. Please check your connection and try again.')
     } finally {
       setLoading(false)
       setActiveAgentId(null)
     }
-  }, [commitHash, environment, branch, buildParams, jenkinsConfig])
+  }, [jobParams, paramValues, jenkinsConfig])
 
   // Filtered history
   const filteredHistory = deploymentHistory.filter(entry => {
@@ -870,125 +1211,164 @@ export default function Page() {
                     Configure and trigger a Jenkins pipeline deployment
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-5">
-                  {/* Commit Hash */}
-                  <div className="space-y-2">
-                    <Label htmlFor="commit-hash" className="text-sm font-medium flex items-center gap-1.5">
-                      <LuGitCommitHorizontal className="h-3.5 w-3.5 text-primary" />
-                      Commit Hash
-                    </Label>
-                    <Input
-                      id="commit-hash"
-                      placeholder="e.g. a3f8b2c4d5e6f7a8"
-                      value={commitHash}
-                      onChange={(e) => setCommitHash(e.target.value)}
-                      className="font-mono text-sm"
-                    />
-                  </div>
+                <CardContent>
+                  <ScrollArea className="max-h-[520px] pr-1">
+                    <div className="space-y-5">
+                      {/* Dynamic Job Parameters */}
+                      {jobParams.map((param) => {
+                        const val = paramValues[param.name] ?? param.defaultValue ?? ''
+                        const safeOptions = Array.isArray(param.options) ? param.options : []
 
-                  {/* Environment */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium flex items-center gap-1.5">
-                      <HiServerStack className="h-3.5 w-3.5 text-primary" />
-                      Environment
-                    </Label>
-                    <Select value={environment} onValueChange={setEnvironment}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select environment" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="dev">Development</SelectItem>
-                        <SelectItem value="staging">Staging</SelectItem>
-                        <SelectItem value="qa">QA</SelectItem>
-                        <SelectItem value="uat">UAT</SelectItem>
-                        <SelectItem value="production">Production</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                        // TEXT input
+                        if (param.type === 'text') {
+                          return (
+                            <div key={param.name} className="space-y-2">
+                              <Label className="text-sm font-medium flex items-center gap-1.5">
+                                {param.name === 'BRANCH' && <LuGitBranch className="h-3.5 w-3.5 text-primary" />}
+                                {param.name !== 'BRANCH' && <HiCog6Tooth className="h-3.5 w-3.5 text-primary" />}
+                                {param.label || param.name}
+                                {param.required && <span className="text-red-500 text-xs ml-0.5">*</span>}
+                              </Label>
+                              <Input
+                                placeholder={param.description || `Enter ${param.label || param.name}`}
+                                value={val}
+                                onChange={(e) => updateParamValue(param.name, e.target.value)}
+                                className="text-sm font-mono"
+                              />
+                              {param.description && (
+                                <p className="text-xs text-muted-foreground">{param.description}</p>
+                              )}
+                            </div>
+                          )
+                        }
 
-                  {/* Branch */}
-                  <div className="space-y-2">
-                    <Label htmlFor="branch" className="text-sm font-medium flex items-center gap-1.5">
-                      <LuGitBranch className="h-3.5 w-3.5 text-primary" />
-                      Branch
-                    </Label>
-                    <Input
-                      id="branch"
-                      placeholder="e.g. main"
-                      value={branch}
-                      onChange={(e) => setBranch(e.target.value)}
-                      className="font-mono text-sm"
-                    />
-                  </div>
+                        // SELECT dropdown
+                        if (param.type === 'select') {
+                          return (
+                            <div key={param.name} className="space-y-2">
+                              <Label className="text-sm font-medium flex items-center gap-1.5">
+                                <HiServerStack className="h-3.5 w-3.5 text-primary" />
+                                {param.label || param.name}
+                                {param.required && <span className="text-red-500 text-xs ml-0.5">*</span>}
+                              </Label>
+                              <Select value={val} onValueChange={(v) => updateParamValue(param.name, v)}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={`Select ${param.label || param.name}`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {safeOptions.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {param.description && (
+                                <p className="text-xs text-muted-foreground">{param.description}</p>
+                              )}
+                            </div>
+                          )
+                        }
 
-                  {/* Build Parameters */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium flex items-center gap-1.5">
-                        <HiCog6Tooth className="h-3.5 w-3.5 text-primary" />
-                        Build Parameters
-                      </Label>
-                      <Button variant="ghost" size="sm" onClick={addBuildParam} className="h-7 gap-1 text-xs">
-                        <HiPlus className="h-3.5 w-3.5" />
-                        Add
+                        // MULTISELECT checkboxes
+                        if (param.type === 'multiselect') {
+                          const selectedValues = val ? val.split(',').filter(Boolean) : []
+                          return (
+                            <div key={param.name} className="space-y-2">
+                              <Label className="text-sm font-medium flex items-center gap-1.5">
+                                <HiCog6Tooth className="h-3.5 w-3.5 text-primary" />
+                                {param.label || param.name}
+                                {param.required && <span className="text-red-500 text-xs ml-0.5">*</span>}
+                              </Label>
+                              <div className="border border-border/60 rounded-lg p-3 space-y-2 bg-secondary/20">
+                                {safeOptions.length === 0 && (
+                                  <p className="text-xs text-muted-foreground">No options defined. Add options in Settings.</p>
+                                )}
+                                {safeOptions.map((opt) => {
+                                  const isChecked = selectedValues.includes(opt)
+                                  return (
+                                    <label key={opt} className="flex items-center gap-2.5 cursor-pointer py-0.5">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => toggleMultiselectOption(param.name, opt)}
+                                        className="h-4 w-4 rounded border-border accent-primary"
+                                      />
+                                      <span className="text-sm text-foreground">{opt}</span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                              {param.description && (
+                                <p className="text-xs text-muted-foreground">{param.description}</p>
+                              )}
+                            </div>
+                          )
+                        }
+
+                        // CHECKBOX (boolean toggle)
+                        if (param.type === 'checkbox') {
+                          const isOn = val === 'true'
+                          return (
+                            <div key={param.name} className="space-y-1.5">
+                              <div className="flex items-center justify-between py-1">
+                                <div className="space-y-0.5">
+                                  <Label className="text-sm font-medium flex items-center gap-1.5 cursor-pointer">
+                                    <HiCog6Tooth className="h-3.5 w-3.5 text-primary" />
+                                    {param.label || param.name}
+                                  </Label>
+                                  {param.description && (
+                                    <p className="text-xs text-muted-foreground">{param.description}</p>
+                                  )}
+                                </div>
+                                <Switch
+                                  checked={isOn}
+                                  onCheckedChange={(v) => updateParamValue(param.name, v ? 'true' : 'false')}
+                                />
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return null
+                      })}
+
+                      {jobParams.length === 0 && (
+                        <div className="text-center py-6">
+                          <p className="text-sm text-muted-foreground">No job parameters configured.</p>
+                          <p className="text-xs text-muted-foreground mt-1">Go to Settings to add parameters for your Jenkins job.</p>
+                        </div>
+                      )}
+
+                      <Separator />
+
+                      {/* Error Message */}
+                      {errorMsg && (
+                        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                          <HiXCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                          <span>{errorMsg}</span>
+                        </div>
+                      )}
+
+                      {/* Deploy Button */}
+                      <Button
+                        onClick={handleDeploy}
+                        disabled={loading}
+                        className="w-full gap-2 font-medium shadow-md"
+                        size="lg"
+                      >
+                        {loading ? (
+                          <>
+                            <LuLoaderCircle className="h-4 w-4 animate-spin" />
+                            Deploying...
+                          </>
+                        ) : (
+                          <>
+                            <HiRocketLaunch className="h-4 w-4" />
+                            Trigger Deployment
+                          </>
+                        )}
                       </Button>
                     </div>
-                    {buildParams.length === 0 && (
-                      <p className="text-xs text-muted-foreground">No build parameters configured. Click Add to include key-value pairs.</p>
-                    )}
-                    <div className="space-y-2">
-                      {buildParams.map((param, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <Input
-                            placeholder="KEY"
-                            value={param.key}
-                            onChange={(e) => updateBuildParam(idx, 'key', e.target.value)}
-                            className="font-mono text-xs flex-1"
-                          />
-                          <span className="text-muted-foreground text-xs">=</span>
-                          <Input
-                            placeholder="value"
-                            value={param.value}
-                            onChange={(e) => updateBuildParam(idx, 'value', e.target.value)}
-                            className="font-mono text-xs flex-1"
-                          />
-                          <Button variant="ghost" size="sm" onClick={() => removeBuildParam(idx)} className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0">
-                            <HiTrash className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Error Message */}
-                  {errorMsg && (
-                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                      <HiXCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                      <span>{errorMsg}</span>
-                    </div>
-                  )}
-
-                  {/* Deploy Button */}
-                  <Button
-                    onClick={handleDeploy}
-                    disabled={loading}
-                    className="w-full gap-2 font-medium shadow-md"
-                    size="lg"
-                  >
-                    {loading ? (
-                      <>
-                        <LuLoaderCircle className="h-4 w-4 animate-spin" />
-                        Deploying...
-                      </>
-                    ) : (
-                      <>
-                        <HiRocketLaunch className="h-4 w-4" />
-                        Trigger Deployment
-                      </>
-                    )}
-                  </Button>
+                  </ScrollArea>
                 </CardContent>
               </Card>
 
@@ -1014,7 +1394,7 @@ export default function Page() {
                     </div>
                   )}
 
-                  {!loading && !currentDeployment && (
+                  {!loading && !currentDeployment && !agentMessage && (
                     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
                       <div className="p-4 bg-secondary/50 rounded-full">
                         <HiCommandLine className="h-8 w-8 text-muted-foreground" />
@@ -1023,6 +1403,21 @@ export default function Page() {
                       <p className="text-xs text-muted-foreground max-w-xs">
                         Fill in the deployment form and click Trigger Deployment to start a new build pipeline.
                       </p>
+                    </div>
+                  )}
+
+                  {/* Agent text message (non-structured response) */}
+                  {!loading && !currentDeployment && agentMessage && (
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <HiInformationCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-blue-800 mb-2">Agent Response</p>
+                          <div className="text-sm text-blue-700">
+                            {renderMarkdown(agentMessage)}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -1074,9 +1469,8 @@ export default function Page() {
                       <SelectContent>
                         <SelectItem value="all">All Envs</SelectItem>
                         <SelectItem value="dev">Dev</SelectItem>
+                        <SelectItem value="sandbox-preprod">Sandbox-Preprod</SelectItem>
                         <SelectItem value="staging">Staging</SelectItem>
-                        <SelectItem value="qa">QA</SelectItem>
-                        <SelectItem value="uat">UAT</SelectItem>
                         <SelectItem value="production">Production</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1125,39 +1519,55 @@ export default function Page() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {templates.map((tmpl, idx) => (
-                    <Card
-                      key={idx}
-                      className="cursor-pointer hover:shadow-lg transition-all duration-300 hover:border-primary/50 border-border/50"
-                    >
-                      <CardContent className="pt-6">
-                        <button
-                          onClick={() => applyTemplate(tmpl)}
-                          className="w-full text-left space-y-3"
-                        >
-                          <div className="p-2.5 bg-primary/10 rounded-lg w-fit">
-                            {tmpl.icon}
-                          </div>
-                          <div>
-                            <h3 className="font-serif font-semibold text-foreground">{tmpl.name}</h3>
-                            <p className="text-xs text-muted-foreground mt-1" style={{ lineHeight: '1.65' }}>
-                              {tmpl.description}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary rounded-md text-xs font-mono">
-                              <HiServerStack className="h-3 w-3" />
-                              {tmpl.environment}
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary rounded-md text-xs font-mono">
-                              <LuGitBranch className="h-3 w-3" />
-                              {tmpl.branch}
-                            </span>
-                          </div>
-                        </button>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  {templates.map((tmpl, idx) => {
+                    const tmplEnv = tmpl.paramValues?.ENVIRONMENT ?? ''
+                    const tmplBranch = tmpl.paramValues?.BRANCH ?? ''
+                    return (
+                      <Card
+                        key={idx}
+                        className="cursor-pointer hover:shadow-lg transition-all duration-300 hover:border-primary/50 border-border/50"
+                      >
+                        <CardContent className="pt-6">
+                          <button
+                            onClick={() => applyTemplate(tmpl)}
+                            className="w-full text-left space-y-3"
+                          >
+                            <div className="p-2.5 bg-primary/10 rounded-lg w-fit">
+                              {tmpl.icon}
+                            </div>
+                            <div>
+                              <h3 className="font-serif font-semibold text-foreground">{tmpl.name}</h3>
+                              <p className="text-xs text-muted-foreground mt-1" style={{ lineHeight: '1.65' }}>
+                                {tmpl.description}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {tmplEnv && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary rounded-md text-xs font-mono">
+                                  <HiServerStack className="h-3 w-3" />
+                                  {tmplEnv}
+                                </span>
+                              )}
+                              {tmplBranch && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary rounded-md text-xs font-mono">
+                                  <LuGitBranch className="h-3 w-3" />
+                                  {tmplBranch}
+                                </span>
+                              )}
+                            </div>
+                            {/* Show all param values */}
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(tmpl.paramValues ?? {}).filter(([k]) => k !== 'ENVIRONMENT' && k !== 'BRANCH').map(([k, v]) => (
+                                <span key={k} className="text-xs font-mono px-1.5 py-0.5 bg-secondary/60 rounded text-muted-foreground">
+                                  {k}={v}
+                                </span>
+                              ))}
+                            </div>
+                          </button>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -1165,6 +1575,7 @@ export default function Page() {
 
           {/* ============ SETTINGS TAB ============ */}
           <TabsContent value="settings" className="space-y-6 mt-6">
+            {/* Jenkins Connection Config */}
             <Card className="shadow-md border-border/50">
               <CardHeader>
                 <CardTitle className="font-serif text-lg flex items-center gap-2">
@@ -1201,12 +1612,12 @@ export default function Page() {
                   </Label>
                   <Input
                     id="jenkins-url"
-                    placeholder="https://jenkins.example.com"
+                    placeholder="https://jenkins.sandbox-preprod.senseq.co"
                     value={jenkinsConfig.serverUrl}
                     onChange={(e) => updateConfigField('serverUrl', e.target.value)}
                     className="text-sm"
                   />
-                  <p className="text-xs text-muted-foreground">The base URL of your Jenkins server (e.g. https://jenkins.yourcompany.com)</p>
+                  <p className="text-xs text-muted-foreground">The base URL of your Jenkins server</p>
                 </div>
 
                 {/* Job Path */}
@@ -1217,7 +1628,7 @@ export default function Page() {
                   </Label>
                   <Input
                     id="jenkins-job"
-                    placeholder="e.g. my-project/deploy or folder/subfolder/job-name"
+                    placeholder="e.g. UI/Deployment/sandbox-preprod-deploy-ui"
                     value={jenkinsConfig.jobPath}
                     onChange={(e) => updateConfigField('jobPath', e.target.value)}
                     className="font-mono text-sm"
@@ -1309,46 +1720,62 @@ export default function Page() {
                     <p>For security, use API tokens instead of passwords. Tokens can be revoked individually without changing your password.</p>
                   </div>
                 </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Button
-                    onClick={handleSaveConfig}
-                    className="gap-2 font-medium shadow-md"
-                  >
-                    {configSaved ? (
-                      <>
-                        <HiCheckCircle className="h-4 w-4" />
-                        Saved
-                      </>
-                    ) : (
-                      <>
-                        <HiCog6Tooth className="h-4 w-4" />
-                        Save Configuration
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleTestConnection}
-                    disabled={!isJenkinsConfigured(jenkinsConfig) || testingConnection}
-                    className="gap-2"
-                  >
-                    {testingConnection ? (
-                      <>
-                        <LuLoaderCircle className="h-4 w-4 animate-spin" />
-                        Testing...
-                      </>
-                    ) : (
-                      <>
-                        <HiSignal className="h-4 w-4" />
-                        Test Connection
-                      </>
-                    )}
-                  </Button>
-                </div>
               </CardContent>
             </Card>
+
+            {/* Job Parameters Config */}
+            <Card className="shadow-md border-border/50">
+              <CardHeader>
+                <CardTitle className="font-serif text-lg flex items-center gap-2">
+                  <HiAdjustmentsHorizontal className="h-5 w-5 text-primary" />
+                  Job Parameters Configuration
+                </CardTitle>
+                <CardDescription style={{ lineHeight: '1.65', letterSpacing: '0.01em' }}>
+                  Define the parameters that will be sent to your Jenkins job when triggering a build. These appear as form fields on the Deploy tab.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <JobParameterEditor params={jobParams} onUpdate={handleJobParamsUpdate} />
+              </CardContent>
+            </Card>
+
+            {/* Save Buttons */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                onClick={handleSaveConfig}
+                className="gap-2 font-medium shadow-md"
+              >
+                {configSaved ? (
+                  <>
+                    <HiCheckCircle className="h-4 w-4" />
+                    Saved
+                  </>
+                ) : (
+                  <>
+                    <HiCog6Tooth className="h-4 w-4" />
+                    Save All Settings
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={!isJenkinsConfigured(jenkinsConfig) || testingConnection}
+                className="gap-2"
+              >
+                {testingConnection ? (
+                  <>
+                    <LuLoaderCircle className="h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <HiSignal className="h-4 w-4" />
+                    Test Connection
+                  </>
+                )}
+              </Button>
+            </div>
           </TabsContent>
         </Tabs>
 
