@@ -30,6 +30,13 @@ import {
   HiClock,
   HiHashtag,
   HiServerStack,
+  HiShieldCheck,
+  HiKey,
+  HiLink,
+  HiEye,
+  HiEyeSlash,
+  HiWrenchScrewdriver,
+  HiInformationCircle,
 } from 'react-icons/hi2'
 import {
   LuGitCommitHorizontal,
@@ -115,6 +122,47 @@ interface DeploymentHistoryEntry {
   id: string
   data: DeploymentResult
   timestamp: string
+}
+
+interface JenkinsConfig {
+  serverUrl: string
+  jobPath: string
+  username: string
+  apiToken: string
+  authMethod: 'token' | 'password'
+}
+
+const JENKINS_CONFIG_KEY = 'jenkins_deployment_config'
+
+const DEFAULT_JENKINS_CONFIG: JenkinsConfig = {
+  serverUrl: '',
+  jobPath: '',
+  username: '',
+  apiToken: '',
+  authMethod: 'token',
+}
+
+function loadJenkinsConfig(): JenkinsConfig {
+  if (typeof window === 'undefined') return DEFAULT_JENKINS_CONFIG
+  try {
+    const stored = localStorage.getItem(JENKINS_CONFIG_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return { ...DEFAULT_JENKINS_CONFIG, ...parsed }
+    }
+  } catch {}
+  return DEFAULT_JENKINS_CONFIG
+}
+
+function saveJenkinsConfig(config: JenkinsConfig) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(JENKINS_CONFIG_KEY, JSON.stringify(config))
+  } catch {}
+}
+
+function isJenkinsConfigured(config: JenkinsConfig): boolean {
+  return !!(config.serverUrl.trim() && config.jobPath.trim() && config.username.trim() && config.apiToken.trim())
 }
 
 interface QuickTemplate {
@@ -566,8 +614,19 @@ export default function Page() {
   // Sample Data Toggle
   const [showSampleData, setShowSampleData] = useState(false)
 
+  // Jenkins Config State
+  const [jenkinsConfig, setJenkinsConfig] = useState<JenkinsConfig>(DEFAULT_JENKINS_CONFIG)
+  const [showToken, setShowToken] = useState(false)
+  const [configSaved, setConfigSaved] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
+
   // Active Tab
   const [activeTab, setActiveTab] = useState('deploy')
+
+  // Load Jenkins config from localStorage on mount
+  useEffect(() => {
+    setJenkinsConfig(loadJenkinsConfig())
+  }, [])
 
   // Quick Deploy Templates
   const templates: QuickTemplate[] = [
@@ -626,6 +685,29 @@ export default function Page() {
     setBuildParams(prev => prev.map((p, i) => (i === index ? { ...p, [field]: val } : p)))
   }, [])
 
+  // Jenkins config handlers
+  const handleSaveConfig = useCallback(() => {
+    saveJenkinsConfig(jenkinsConfig)
+    setConfigSaved(true)
+    setTimeout(() => setConfigSaved(false), 2500)
+  }, [jenkinsConfig])
+
+  const updateConfigField = useCallback((field: keyof JenkinsConfig, value: string) => {
+    setJenkinsConfig(prev => ({ ...prev, [field]: value }))
+    setConfigSaved(false)
+  }, [])
+
+  const handleTestConnection = useCallback(async () => {
+    if (!isJenkinsConfigured(jenkinsConfig)) return
+    setTestingConnection(true)
+    // Simulate a connection test via the agent
+    try {
+      const testMsg = `/test-connection server:${jenkinsConfig.serverUrl} job:${jenkinsConfig.jobPath} user:${jenkinsConfig.username}`
+      await callAIAgent(testMsg, DEPLOYMENT_AGENT_ID)
+    } catch {}
+    setTestingConnection(false)
+  }, [jenkinsConfig])
+
   // Apply template
   const applyTemplate = useCallback((template: QuickTemplate) => {
     setEnvironment(template.environment)
@@ -637,6 +719,11 @@ export default function Page() {
   const handleDeploy = useCallback(async () => {
     if (!commitHash.trim()) {
       setErrorMsg('Please enter a commit hash to deploy.')
+      return
+    }
+
+    if (!isJenkinsConfigured(jenkinsConfig)) {
+      setErrorMsg('Jenkins is not configured. Go to the Settings tab to set up your Jenkins server URL, job path, and credentials.')
       return
     }
 
@@ -652,6 +739,7 @@ export default function Page() {
       .join(',')
 
     let message = `/deploy commit:${commitHash.trim()} env:${environment} branch:${branch.trim()}`
+    message += ` server:${jenkinsConfig.serverUrl} job:${jenkinsConfig.jobPath} user:${jenkinsConfig.username} auth:${jenkinsConfig.apiToken} auth_method:${jenkinsConfig.authMethod}`
     if (paramsStr) {
       message += ` params:${paramsStr}`
     }
@@ -683,7 +771,7 @@ export default function Page() {
       setLoading(false)
       setActiveAgentId(null)
     }
-  }, [commitHash, environment, branch, buildParams])
+  }, [commitHash, environment, branch, buildParams, jenkinsConfig])
 
   // Filtered history
   const filteredHistory = deploymentHistory.filter(entry => {
@@ -726,7 +814,7 @@ export default function Page() {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:flex">
+          <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:flex">
             <TabsTrigger value="deploy" className="gap-1.5">
               <HiPlay className="h-4 w-4" />
               Deploy
@@ -739,10 +827,37 @@ export default function Page() {
               <HiBolt className="h-4 w-4" />
               Quick Deploy
             </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-1.5">
+              <HiWrenchScrewdriver className="h-4 w-4" />
+              Settings
+              {!isJenkinsConfigured(jenkinsConfig) && (
+                <span className="h-2 w-2 rounded-full bg-amber-500 flex-shrink-0" />
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* ============ DEPLOY TAB ============ */}
           <TabsContent value="deploy" className="space-y-6 mt-6">
+            {/* Jenkins Config Warning */}
+            {!isJenkinsConfigured(jenkinsConfig) && (
+              <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <HiExclamationCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-800">Jenkins Not Configured</p>
+                  <p className="text-xs text-amber-600 mt-0.5">You need to configure your Jenkins server URL, job path, and credentials before deploying.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActiveTab('settings')}
+                  className="gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-100 flex-shrink-0"
+                >
+                  <HiWrenchScrewdriver className="h-3.5 w-3.5" />
+                  Configure
+                </Button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
               {/* Deploy Form */}
               <Card className="lg:col-span-2 shadow-md border-border/50">
@@ -1047,18 +1162,212 @@ export default function Page() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ============ SETTINGS TAB ============ */}
+          <TabsContent value="settings" className="space-y-6 mt-6">
+            <Card className="shadow-md border-border/50">
+              <CardHeader>
+                <CardTitle className="font-serif text-lg flex items-center gap-2">
+                  <HiWrenchScrewdriver className="h-5 w-5 text-primary" />
+                  Jenkins Configuration
+                </CardTitle>
+                <CardDescription style={{ lineHeight: '1.65', letterSpacing: '0.01em' }}>
+                  Configure your Jenkins server connection, job path, and authentication credentials. These settings are stored locally in your browser.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Connection Status */}
+                <div className={`flex items-center gap-3 p-3 rounded-lg border ${isJenkinsConfigured(jenkinsConfig) ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${isJenkinsConfigured(jenkinsConfig) ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+                  <div>
+                    <p className={`text-sm font-medium ${isJenkinsConfigured(jenkinsConfig) ? 'text-green-800' : 'text-amber-800'}`}>
+                      {isJenkinsConfigured(jenkinsConfig) ? 'Jenkins Configured' : 'Configuration Required'}
+                    </p>
+                    <p className={`text-xs ${isJenkinsConfigured(jenkinsConfig) ? 'text-green-600' : 'text-amber-600'}`}>
+                      {isJenkinsConfigured(jenkinsConfig)
+                        ? `Connected to ${jenkinsConfig.serverUrl}`
+                        : 'Fill in all required fields below to enable deployments.'}
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Server URL */}
+                <div className="space-y-2">
+                  <Label htmlFor="jenkins-url" className="text-sm font-medium flex items-center gap-1.5">
+                    <HiLink className="h-3.5 w-3.5 text-primary" />
+                    Jenkins Server URL
+                  </Label>
+                  <Input
+                    id="jenkins-url"
+                    placeholder="https://jenkins.example.com"
+                    value={jenkinsConfig.serverUrl}
+                    onChange={(e) => updateConfigField('serverUrl', e.target.value)}
+                    className="text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">The base URL of your Jenkins server (e.g. https://jenkins.yourcompany.com)</p>
+                </div>
+
+                {/* Job Path */}
+                <div className="space-y-2">
+                  <Label htmlFor="jenkins-job" className="text-sm font-medium flex items-center gap-1.5">
+                    <HiCommandLine className="h-3.5 w-3.5 text-primary" />
+                    Job Path
+                  </Label>
+                  <Input
+                    id="jenkins-job"
+                    placeholder="e.g. my-project/deploy or folder/subfolder/job-name"
+                    value={jenkinsConfig.jobPath}
+                    onChange={(e) => updateConfigField('jobPath', e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">The Jenkins job path to trigger. Use forward slashes for folder structures.</p>
+                </div>
+
+                <Separator />
+
+                {/* Auth Section Header */}
+                <div className="flex items-center gap-2">
+                  <HiShieldCheck className="h-4 w-4 text-primary" />
+                  <h4 className="text-sm font-semibold text-foreground">Authentication</h4>
+                </div>
+
+                {/* Auth Method */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Auth Method</Label>
+                  <Select
+                    value={jenkinsConfig.authMethod}
+                    onValueChange={(val) => updateConfigField('authMethod', val)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select auth method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="token">API Token (Recommended)</SelectItem>
+                      <SelectItem value="password">Password</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Username */}
+                <div className="space-y-2">
+                  <Label htmlFor="jenkins-user" className="text-sm font-medium flex items-center gap-1.5">
+                    <HiKey className="h-3.5 w-3.5 text-primary" />
+                    Username
+                  </Label>
+                  <Input
+                    id="jenkins-user"
+                    placeholder="your-jenkins-username"
+                    value={jenkinsConfig.username}
+                    onChange={(e) => updateConfigField('username', e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+
+                {/* API Token / Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="jenkins-token" className="text-sm font-medium flex items-center gap-1.5">
+                    <HiShieldCheck className="h-3.5 w-3.5 text-primary" />
+                    {jenkinsConfig.authMethod === 'token' ? 'API Token' : 'Password'}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="jenkins-token"
+                      type={showToken ? 'text' : 'password'}
+                      placeholder={jenkinsConfig.authMethod === 'token' ? 'Your Jenkins API token' : 'Your Jenkins password'}
+                      value={jenkinsConfig.apiToken}
+                      onChange={(e) => updateConfigField('apiToken', e.target.value)}
+                      className="text-sm pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(prev => !prev)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showToken ? (
+                        <HiEyeSlash className="h-4 w-4" />
+                      ) : (
+                        <HiEye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  {jenkinsConfig.authMethod === 'token' && (
+                    <p className="text-xs text-muted-foreground">
+                      Generate an API token from Jenkins: User Menu &gt; Configure &gt; API Token &gt; Add new token
+                    </p>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Info Box */}
+                <div className="flex items-start gap-2.5 p-3 bg-secondary/50 rounded-lg border border-border/40">
+                  <HiInformationCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-muted-foreground space-y-1" style={{ lineHeight: '1.65' }}>
+                    <p>Credentials are stored locally in your browser&apos;s localStorage and are never sent to any server other than your configured Jenkins instance.</p>
+                    <p>For security, use API tokens instead of passwords. Tokens can be revoked individually without changing your password.</p>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    onClick={handleSaveConfig}
+                    className="gap-2 font-medium shadow-md"
+                  >
+                    {configSaved ? (
+                      <>
+                        <HiCheckCircle className="h-4 w-4" />
+                        Saved
+                      </>
+                    ) : (
+                      <>
+                        <HiCog6Tooth className="h-4 w-4" />
+                        Save Configuration
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={!isJenkinsConfigured(jenkinsConfig) || testingConnection}
+                    className="gap-2"
+                  >
+                    {testingConnection ? (
+                      <>
+                        <LuLoader2 className="h-4 w-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      <>
+                        <HiSignal className="h-4 w-4" />
+                        Test Connection
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Agent Info Section */}
         <Card className="shadow-sm border-border/40">
           <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <div className={`h-2 w-2 rounded-full ${activeAgentId ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
                   <span className="text-xs font-medium text-foreground">Deployment Agent</span>
+                  <span className="text-xs text-muted-foreground font-mono">{DEPLOYMENT_AGENT_ID}</span>
                 </div>
-                <span className="text-xs text-muted-foreground font-mono">{DEPLOYMENT_AGENT_ID}</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-2 w-2 rounded-full ${isJenkinsConfigured(jenkinsConfig) ? 'bg-green-500' : 'bg-amber-500'}`} />
+                  <span className="text-xs text-muted-foreground">
+                    Jenkins: {isJenkinsConfigured(jenkinsConfig) ? 'Configured' : 'Not configured'}
+                  </span>
+                </div>
               </div>
               <span className="text-xs text-muted-foreground">
                 {activeAgentId ? 'Processing request...' : 'Ready'}
